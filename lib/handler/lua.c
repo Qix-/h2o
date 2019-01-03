@@ -27,35 +27,194 @@
 #include "h2o/lua_.h"
 #include "h2o/memory.h"
 
-static void on_handler_dispose(h2o_handler_t *_handler) {
-    h2o_lua_handler_t *handler = (void *)_handler;
+const char * const string_wrapper[2] = {
+    "return function(req)\n",
+    "\nend\n"
+};
 
-    if (handler->L != NULL) {
-        lua_close(handler->L);
+struct read_state_t {
+    int state;
+    h2o_iovec_t *source;
+};
+
+static int on_req(h2o_handler_t *_handler, h2o_req_t *req)
+{
+    h2o_lua_handler_t *handler = (void *)_handler;
+    h2o_lua_context_t *ctx = h2o_context_get_handler_context(req->conn->ctx, &handler->super);
+
+    lua_rawgeti(ctx->L, LUA_REGISTRYINDEX, ctx->chunk_ref);
+
+    switch (lua_pcall(ctx->L, 0, 0, 0)) {
+        case 0:
+            break;
+        case LUA_ERRRUN:
+            h2o_req_log_error(req, "lua", " lua: error: %s (%.*s:%d)\n",
+                lua_tostring(ctx->L, -1),
+                (int) handler->config_filename.len, handler->config_filename.base, handler->config_line);
+            lua_pop(ctx->L, 1);
+            goto handler_failure;
+        case LUA_ERRMEM:
+            h2o_req_log_error(req, "lua", " lua: memory allocation failed while running script (%.*s:%d)\n",
+                (int) handler->config_filename.len, handler->config_filename.base, handler->config_line);
+            goto handler_failure;
+        case LUA_ERRERR:
+            h2o_req_log_error(req, "lua", " lua: there was an error from within the error handler during script execution: %s (%.*s:%d)\n",
+                lua_tostring(ctx->L, -1),
+                (int) handler->config_filename.len, handler->config_filename.base, handler->config_line);
+            lua_pop(ctx->L, 1);
+            goto handler_failure;
+        default:
+            h2o_req_log_error(req, "lua", " lua: unknown error while running script (%.*s:%d)\n",
+                (int) handler->config_filename.len, handler->config_filename.base, handler->config_line);
+            goto handler_failure;
     }
 
-    h2o_mem_free(handler);
-}
+    req->res.status = 200; /* XXX */
+    h2o_send_inline(req, H2O_STRLIT("")); /* XXX */
+    return 0;
 
-static int on_req(h2o_handler_t *_handler, h2o_req_t *req) {
-    fprintf(stderr, "lua: DEBUG req!\n");
+handler_failure:
+    h2o_send_error_500(req, "Internal Server Error", "Internal Server Error", 0);
     return 0;
 }
 
 static const char * lua_string_reader(lua_State *L, void *data, size_t *size)
 {
-    const char **script = data;
+    struct read_state_t *state = data;
 
-    if (*script == NULL) {
+    int stage_no = state->state;
+    ++state->state;
+
+    switch (stage_no) {
+    case 0:
+        *size = strlen(string_wrapper[0]);
+        return string_wrapper[0];
+    case 1:
+        *size = state->source->len;
+        return state->source->base;
+    case 2:
+        *size = strlen(string_wrapper[1]);
+        return string_wrapper[1];
+    case 3:
         *size = 0;
         return NULL;
     }
 
-    const char *result = *script;
-    *size = strlen(result);
-    *script = NULL;
+    assert(0 && "invalid lua string read state");
+    *size = 0;
+    return NULL; /* to make the compiler happy in release builds */
+}
 
-    return result;
+static void on_context_init(h2o_handler_t *_handler, h2o_context_t *ctx)
+{
+    h2o_lua_handler_t *handler = (void *)_handler;
+    h2o_lua_context_t *handler_ctx = h2o_mem_alloc(sizeof(*handler_ctx));
+
+    handler_ctx->handler = handler;
+
+    errno = 0;
+    handler_ctx->L = luaL_newstate();
+
+    if (handler_ctx->L == NULL) {
+        fprintf(stderr, "lua: could not allocate new lua state: %s\n", strerror(errno));
+        exit(1);
+    }
+
+    luaL_openlibs(handler_ctx->L);
+
+    struct read_state_t read_state;
+    read_state.state = 0;
+    read_state.source = &handler->script_source;
+
+    switch (lua_load(handler_ctx->L, &lua_string_reader, &read_state, handler->script_name.base)) {
+        case 0:
+            break;
+        case LUA_ERRSYNTAX:
+            fprintf(stderr, "lua: syntax error: %s (%s:%d)\n",
+                lua_tostring(handler_ctx->L, -1),
+                handler->config_filename.base, handler->config_line);
+            lua_pop(handler_ctx->L, 1);
+            goto load_failure;
+        case LUA_ERRMEM:
+            fprintf(stderr, "lua: memory allocation failed while loading script (%s:%d)\n",
+                handler->config_filename.base, handler->config_line);
+            goto load_failure;
+        default:
+            fprintf(stderr, "lua: unknown error while loading script (%s:%d)\n",
+                handler->config_filename.base, handler->config_line);
+            goto load_failure;
+    }
+
+    switch (lua_pcall(handler_ctx->L, 0, 1, 0)) {
+        case 0:
+            break;
+        case LUA_ERRRUN:
+            fprintf(stderr, "lua: error: %s (%s:%d)\n",
+                lua_tostring(handler_ctx->L, -1),
+                handler->config_filename.base, handler->config_line);
+            lua_pop(handler_ctx->L, 1);
+            goto load_failure;
+        case LUA_ERRMEM:
+            fprintf(stderr, "lua: memory allocation failed while running script (%s:%d)\n",
+                handler->config_filename.base, handler->config_line);
+            goto load_failure;
+        case LUA_ERRERR:
+            fprintf(stderr, "lua: there was an error from within the error handler during script execution: %s (%s:%d)\n",
+                lua_tostring(handler_ctx->L, -1),
+                handler->config_filename.base, handler->config_line);
+            lua_pop(handler_ctx->L, 1);
+            goto load_failure;
+        default:
+            fprintf(stderr, "lua: unknown error while running script (%s:%d)\n",
+                handler->config_filename.base, handler->config_line);
+            goto load_failure;
+    }
+
+    /* did the script return a function? */
+    if (!lua_isfunction(handler_ctx->L, -1)) {
+        fprintf(stderr, "lua: handler scripts must return a function object (got %s) (%s:%d)\n",
+            lua_typename(handler_ctx->L, lua_type(handler_ctx->L, -1)),
+                handler->config_filename.base, handler->config_line);
+            lua_pop(handler_ctx->L, 1);
+            goto load_failure;
+    }
+
+    handler_ctx->chunk_ref = luaL_ref(handler_ctx->L, LUA_REGISTRYINDEX);
+    assert(handler_ctx->chunk_ref >= 0); /* since -1 means error */
+
+    /* success! */
+    h2o_context_set_handler_context(ctx, &handler->super, handler_ctx);
+    return;
+
+load_failure:
+    lua_close(handler_ctx->L);
+    exit(1);
+}
+
+static void on_context_dispose(h2o_handler_t *_handler, h2o_context_t *ctx)
+{
+    h2o_lua_handler_t *handler = (void *)_handler;
+    h2o_lua_context_t *handler_ctx = h2o_context_get_handler_context(ctx, &handler->super);
+
+    if (handler_ctx == NULL) {
+        return;
+    }
+
+    if (handler_ctx->L != NULL) {
+        lua_close(handler_ctx->L);
+    }
+
+    free(handler_ctx);
+}
+
+static void on_handler_dispose(h2o_handler_t *_handler)
+{
+    h2o_lua_handler_t *handler = (void *)_handler;
+
+    free(handler->config_filename.base);
+    free(handler->script_name.base);
+    free(handler->script_source.base);
+    free(handler);
 }
 
 int h2o_lua_register_handler(
@@ -65,52 +224,16 @@ int h2o_lua_register_handler(
 {
     h2o_lua_handler_t *handler = (void *)h2o_create_handler(pathconf, sizeof(*handler));
 
-    handler->super.on_context_init = NULL;
-    handler->super.on_context_dispose = NULL;
+    handler->super.on_context_init = on_context_init;
+    handler->super.on_context_dispose = on_context_dispose;
     handler->super.dispose = on_handler_dispose;
     handler->super.on_req = on_req;
 
-    handler->config_filename = config_filename;
+    handler->config_filename = h2o_strdup(NULL, config_filename, strlen(config_filename));
     handler->config_line = config_line;
     handler->pathconf = pathconf;
-    handler->chunk_ref = -1;
+    handler->script_name = h2o_strdup(NULL, script_name, strlen(script_name));
+    handler->script_source = h2o_strdup(NULL, script_src, strlen(script_src));
 
-    errno = 0;
-    handler->L = luaL_newstate();
-
-    if (handler->L == NULL) {
-        fprintf(stderr, "lua: could not allocate new lua state: %s\n", strerror(errno));
-        return -1;
-    }
-
-    const char *script = script_src;
-
-    switch (lua_load(handler->L, &lua_string_reader, &script, script_name)) {
-        case 0:
-            goto load_success;
-        case LUA_ERRSYNTAX:
-            fprintf(stderr, "lua: syntax error: %s (%s:%d)\n",
-                lua_tostring(handler->L, -1),
-                config_filename, config_line);
-            lua_pop(handler->L, 1);
-            break;
-        case LUA_ERRMEM:
-            fprintf(stderr, "lua: memory allocation failed while loading script (%s:%d)\n",
-                config_filename, config_line);
-            break;
-        default:
-            fprintf(stderr, "lua: unknown error while loading script (%s:%d)\n",
-                config_filename, config_line);
-            break;
-    }
-
-    /* failure */
-    lua_close(handler->L);
-    handler->L = NULL;
-    return -1;
-
-load_success:
-    handler->chunk_ref = luaL_ref(handler->L, LUA_REGISTRYINDEX);
-    assert(handler->chunk_ref >= 0); /* since -1 means error */
     return 0;
 }

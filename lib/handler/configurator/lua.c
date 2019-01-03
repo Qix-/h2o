@@ -24,7 +24,6 @@
 #include "h2o.h"
 #include "h2o/configurator.h"
 #include "h2o/lua_.h"
-#include "h2o/memory.h"
 
 struct luajit_configurator_t
 {
