@@ -19,6 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -31,6 +32,7 @@ struct luajit_config_vars_t {
     int unused;
     const char *config_file;
     int config_line;
+    int chunk_ref;
 };
 
 struct luajit_configurator_t
@@ -64,24 +66,25 @@ static int on_config_exit(h2o_configurator_t *_self, h2o_configurator_context_t 
     return 0;
 }
 
-void * h2o_lua_allocator(void *udata, void *ptr, size_t osize, size_t nsize)
-{
-	(void) udata;
-	(void) osize;
+static const char * lua_string_reader(lua_State *L, void *data, size_t *size) {
+    const char **script = data;
 
-	if (nsize == 0) {
-		h2o_mem_free(ptr);
-		return NULL;
-	}
+    if (*script == NULL) {
+        *size = 0;
+        return NULL;
+    }
 
-	return h2o_mem_realloc(ptr, nsize);
+    const char *result = *script;
+    *size = strlen(result);
+    *script = NULL;
+
+    return result;
 }
 
 static int on_config_luajit_handler(h2o_configurator_command_t *cmd, h2o_configurator_context_t *ctx, yoml_t *node)
 {
     struct luajit_configurator_t *self = (void *)cmd->configurator;
 
-    //self->L = lua_newstate(&h2o_lua_allocator, NULL);
     errno = 0;
     self->L = luaL_newstate();
 
@@ -90,15 +93,44 @@ static int on_config_luajit_handler(h2o_configurator_command_t *cmd, h2o_configu
         return -1;
     }
 
-    // XXX DEBUG
-    fputs("lua: made new state successfully\n", stderr);
-
     /* set source */
-    /* node->data.scalar */
+    self->vars->chunk_ref = -1;
     self->vars->config_file = node->filename;
     self->vars->config_line = (int)node->line + 1;
 
-    // TODO load source
+    char namebuf[1024];
+    snprintf(namebuf, sizeof(namebuf), "%s:%d",
+        self->vars->config_file, self->vars->config_line);
+
+    const char *script = node->data.scalar;
+
+    switch (lua_load(self->L, &lua_string_reader, &script, namebuf)) {
+        case 0:
+            goto load_success;
+        case LUA_ERRSYNTAX:
+            fprintf(stderr, "lua: syntax error: %s (%s:%d)\n",
+                lua_tostring(self->L, -1),
+                self->vars->config_file, self->vars->config_line);
+            lua_pop(self->L, 1);
+            break;
+        case LUA_ERRMEM:
+            fprintf(stderr, "lua: memory allocation failed while loading script (%s:%d)\n",
+                self->vars->config_file, self->vars->config_line);
+            break;
+        default:
+            fprintf(stderr, "lua: unknown error while loading script (%s:%d)\n",
+                self->vars->config_file, self->vars->config_line);
+            break;
+    }
+
+    /* failure */
+    lua_close(self->L);
+    self->L = NULL;
+    return -1;
+
+load_success:
+    self->vars->chunk_ref = luaL_ref(self->L, LUA_REGISTRYINDEX);
+    assert(self->vars->chunk_ref >= 0); /* since -1 means error */
 
     fprintf(stderr, "lua: loaded immediate script (%s:%d)\n",
         self->vars->config_file, self->vars->config_line);
