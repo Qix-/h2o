@@ -19,13 +19,13 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#include <stdio.h>
 #include "h2o.h"
 #include "h2o/configurator.h"
 #include "h2o/lua_.h"
 
 struct luajit_config_vars_t {
     int unused;
-    h2o_iovec_t filename;
     const char *config_file;
     int config_line;
 };
@@ -65,11 +65,14 @@ static int on_config_luajit_handler(h2o_configurator_command_t *cmd, h2o_configu
     struct luajit_configurator_t *self = (void *)cmd->configurator;
 
     /* set source */
-    self->vars->filename = h2o_strdup(NULL, node->data.scalar, SIZE_MAX);
+    /* node->data.scalar */
     self->vars->config_file = node->filename;
     self->vars->config_line = (int)node->line + 1;
 
     // TODO load source
+
+    fprintf(stderr, "lua: loaded immediate script (%s:%d)\n",
+        self->vars->config_file, self->vars->config_line);
 
     return 0;
 }
