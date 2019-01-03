@@ -23,7 +23,13 @@
 #define H2O_LUA_H__
 #pragma once
 
+#include <lua.h>
+#include <luajit.h>
+#include <lauxlib.h>
 #include "h2o.h"
+
+/* lua-compatible memory allocator using h2o's memory facilities */
+void * h2o_lua_allocator(void *udata, void *ptr, size_t osize, size_t nsize);
 
 /* handler/configurator/lua.c */
 void h2o_lua_register_configurator(h2o_globalconf_t *conf);

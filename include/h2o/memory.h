@@ -175,9 +175,13 @@ static h2o_iovec_t h2o_iovec_init(const void *base, size_t len);
  */
 H2O_RETURNS_NONNULL static void *h2o_mem_alloc(size_t sz);
 /**
- * warpper of realloc; reallocs the given chunk or dies if impossible
+ * wrapper of realloc; reallocs the given chunk or dies if impossible
  */
 static void *h2o_mem_realloc(void *oldp, size_t sz);
+/**
+ * wrapper of free in order to keep API consistency
+ */
+#define h2o_mem_free free
 
 /**
  * allocates memory using the reusing allocator
