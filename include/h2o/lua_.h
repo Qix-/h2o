@@ -24,11 +24,28 @@
 #pragma once
 
 #include <lua.h>
-#include <luajit.h>
 #include <lauxlib.h>
 #include "h2o.h"
 
+typedef struct st_h2o_lua_handler_t {
+    h2o_handler_t super; /* must be first */
+
+    const char *config_filename;
+    int config_line;
+
+    h2o_pathconf_t *pathconf;
+
+    lua_State *L;
+    int chunk_ref;
+} h2o_lua_handler_t;
+
 /* handler/configurator/lua.c */
 void h2o_lua_register_configurator(h2o_globalconf_t *conf);
+
+/* handler/lua.c */
+int h2o_lua_register_handler(
+    h2o_pathconf_t *pathconf,
+    const char *config_filename, int config_line,
+    const char *script_src, const char *script_name);
 
 #endif

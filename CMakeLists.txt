@@ -577,7 +577,8 @@ ENDIF ()
 IF (WITH_LUA)
     FIND_PACKAGE(LuaJIT REQUIRED)
     LIST(APPEND STANDALONE_SOURCE_FILES
-        lib/handler/configurator/lua.c)
+        lib/handler/configurator/lua.c
+        lib/handler/lua.c)
     SET(STANDALONE_COMPILE_FLAGS "${STANDALONE_COMPILE_FLAGS} -DH2O_USE_LUA=1")
     INCLUDE_DIRECTORIES(${LUAJIT_INCLUDE_DIR})
 ENDIF ()
