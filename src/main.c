@@ -66,6 +66,9 @@
 #if H2O_USE_MRUBY
 #include "h2o/mruby_.h"
 #endif
+#if H2O_USE_LUA
+#include "h2o/lua_.h"
+#endif
 #include "standalone.h"
 
 #ifdef TCP_FASTOPEN
@@ -1975,6 +1978,9 @@ static void setup_configurators(void)
     h2o_server_timing_register_configurator(&conf.globalconf);
 #if H2O_USE_MRUBY
     h2o_mruby_register_configurator(&conf.globalconf);
+#endif
+#if H2O_USE_LUA
+    h2o_lua_register_configurator(&conf.globalconf);
 #endif
 
     static h2o_status_handler_t extra_status_handler = {{H2O_STRLIT("main")}, on_extra_status};
