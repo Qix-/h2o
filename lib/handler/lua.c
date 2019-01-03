@@ -32,6 +32,33 @@ const char * const string_wrapper[2] = {
     "\nend\n"
 };
 
+/* be very selective with which libraries you choose to load. */
+/* also worth mentioning: coroutines are included by default
+   in luajit - there is no luaopen_x() for them. */
+static const luaL_Reg loadedlibs[] = {
+    {"_G", luaopen_base},
+    {LUA_LOADLIBNAME, luaopen_package},
+    {LUA_TABLIBNAME, luaopen_table},
+    /*{LUA_IOLIBNAME, luaopen_io},*/
+    /*{LUA_OSLIBNAME, luaopen_os},*/
+    {LUA_STRLIBNAME, luaopen_string},
+    {LUA_MATHLIBNAME, luaopen_math},
+    {LUA_BITLIBNAME, luaopen_bit},
+    /*{LUA_JITLIBNAME, luaopen_jit},*/
+    /*{LUA_FFILIBNAME, luaopen_ffi},*/
+    /*{LUA_DBLIBNAME, luaopen_debug},*/
+    {NULL, NULL}
+};
+
+static void lua_open_h2o_libs(lua_State *L) {
+    const luaL_Reg *lib = loadedlibs;
+    for (; lib->func; lib++) {
+        lua_pushcfunction(L, lib->func);
+        lua_pushstring(L, lib->name);
+        lua_call(L, 1, 0);
+    }
+}
+
 struct read_state_t {
     int state;
     h2o_iovec_t *source;
@@ -120,7 +147,7 @@ static void on_context_init(h2o_handler_t *_handler, h2o_context_t *ctx)
         exit(1);
     }
 
-    luaL_openlibs(handler_ctx->L);
+    lua_open_h2o_libs(handler_ctx->L);
 
     struct read_state_t read_state;
     read_state.state = 0;
