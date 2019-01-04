@@ -50,6 +50,11 @@ static const luaL_Reg loadedlibs[] = {
     {NULL, NULL}
 };
 
+struct read_state_t {
+    int state;
+    h2o_iovec_t *source;
+};
+
 static void lua_open_h2o_libs(lua_State *L) {
     const luaL_Reg *lib = loadedlibs;
     for (; lib->func; lib++) {
@@ -59,11 +64,6 @@ static void lua_open_h2o_libs(lua_State *L) {
     }
 }
 
-struct read_state_t {
-    int state;
-    h2o_iovec_t *source;
-};
-
 static int on_req(h2o_handler_t *_handler, h2o_req_t *req)
 {
     h2o_lua_handler_t *handler = (void *)_handler;
@@ -71,7 +71,10 @@ static int on_req(h2o_handler_t *_handler, h2o_req_t *req)
 
     lua_rawgeti(ctx->L, LUA_REGISTRYINDEX, ctx->chunk_ref);
 
-    switch (lua_pcall(ctx->L, 0, 0, 0)) {
+    /* wrap the request object */
+    h2o_lua__push_request(ctx->L, req);
+
+    switch (lua_pcall(ctx->L, 1, 0, 0)) {
         case 0:
             break;
         case LUA_ERRRUN:
@@ -148,6 +151,8 @@ static void on_context_init(h2o_handler_t *_handler, h2o_context_t *ctx)
     }
 
     lua_open_h2o_libs(handler_ctx->L);
+
+    h2o_lua__mt_register_request(handler_ctx->L);
 
     struct read_state_t read_state;
     read_state.state = 0;

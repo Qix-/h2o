@@ -23,6 +23,16 @@
 #define H2O_LUA_H__
 #pragma once
 
+/*
+ * Note about the h2o Lua API:
+ *
+ *   All functions that have to do with lua/C interop have a double-underscore
+ *   delimiter.
+ *
+ *   These functions are exposed to, or otherwise work directly with, the
+ *   Lua state and thus follow the Lua function signature.
+ */
+
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
@@ -54,5 +64,16 @@ int h2o_lua_register_handler(
     h2o_pathconf_t *pathconf,
     const char *config_filename, int config_line,
     const char *script_src, const char *script_name);
+
+/* handler/lua/request.c */
+void h2o_lua__mt_register_request(lua_State *L); /* -0,+0 */
+
+void h2o_lua__push_request(lua_State *L, h2o_req_t *req); /* -0,+1 */
+int h2o_lua__req_mt_index(lua_State *L) /* -2,+1 */;
+int h2o_lua__req_mt_newindex(lua_State *L) /* -3,+0 */;
+int h2o_lua__req_mt_tostring(lua_State *L) /* -1,+1 */;
+
+/* handler/lua/util.c */
+void * h2o_lua__checkudata(lua_State *L, int idx, const char *name); /* -0, +0 */
 
 #endif
