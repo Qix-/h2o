@@ -36,6 +36,7 @@ FIND_PATH(LUAJIT_INCLUDE_DIR lua.h
   ~/Library/Frameworks
   /Library/Frameworks
   /usr/local
+  /usr/local/
   /usr
   /sw # Fink
   /opt/local # DarwinPorts
@@ -43,7 +44,7 @@ FIND_PATH(LUAJIT_INCLUDE_DIR lua.h
   /opt
 )
 
-FIND_LIBRARY(LUAJIT_LIBRARY 
+FIND_LIBRARY(LUAJIT_LIBRARY
   NAMES luajit-51 luajit-5.1 luajit
   HINTS
   $ENV{LUAJIT_DIR}
