@@ -23,32 +23,47 @@
 #include "h2o/lua_.h"
 
 static const char * const req_mt_name = "H2O request";
+static const char * const req_global_name = "request";
+
+static const luaL_Reg lua_req_methods[] = {
+    {NULL, NULL}
+};
 
 static const luaL_Reg lua_req_mt[] = {
     {"__index", h2o_lua__req_mt_index},
     {"__newindex", h2o_lua__req_mt_newindex},
     {"__tostring", h2o_lua__req_mt_tostring},
+    {"__gc", h2o_lua__req_mt_gc},
     {NULL, NULL}
 };
 
 void h2o_lua__push_request(lua_State *L, h2o_req_t *req)
 {
     /* 1 */ lua_pushlightuserdata(L, req);
-    /* 2 */ luaL_getmetatable(L, req_mt_name);
-    /* 1 */ lua_setmetatable(L, -2);
+    /* 2 */ lua_createtable(L, 0, 1); /* per-instance metatable */
+    /* 2 */ luaL_register(L, NULL, lua_req_mt);
+    /* 3 */ luaL_getmetatable(L, req_mt_name);
+    /* 2 */ lua_setmetatable(L, -2);
 }
 
-void h2o_lua__mt_register_request(lua_State *L)
+void h2o_lua__register_request(lua_State *L)
 {
     /* 1 */ luaL_newmetatable(L, req_mt_name);
-    /* 1 */ luaL_register(L, 0, lua_req_mt);
-    /* 0 */ lua_pop(L, 1);
+
+    /* 2 */ lua_createtable(L, 0, 0); /* TODO update non-arr number with number of entries */
+    /* 2 */ luaL_register(L, NULL, lua_req_methods);
+    /* 3 */ lua_pushval(L, -1); /* clone since we need it in two places */
+
+    /* 2 */ lua_pushval(L, -2, "__index");
+    /* 1 */ lua_pop(L 1);
+
+    /* 0 */ lua_setglobal(L, -1, req_global_name);
     return;
 }
 
 int h2o_lua__req_mt_index(lua_State *L)
 {
-    lua_pushnil(L); /* TODO */
+    lua_
     return 1;
 }
 

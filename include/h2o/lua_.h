@@ -66,7 +66,7 @@ int h2o_lua_register_handler(
     const char *script_src, const char *script_name);
 
 /* handler/lua/request.c */
-void h2o_lua__mt_register_request(lua_State *L); /* -0,+0 */
+void h2o_lua__register_request(lua_State *L); /* -0,+0 */
 
 void h2o_lua__push_request(lua_State *L, h2o_req_t *req); /* -0,+1 */
 int h2o_lua__req_mt_index(lua_State *L) /* -2,+1 */;
